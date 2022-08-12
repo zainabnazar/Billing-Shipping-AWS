@@ -1,0 +1,24 @@
+service: workshop-snssqs
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  profile: serverless
+  region: eu-west-1
+  apiGateway:
+    apiKeys:
+      - order-function-key
+
+functions:
+  OrderFunction:
+    handler: order-function/handler.handle
+    events:
+      - http:
+          path: /
+          method: post
+          private: true
+
+
+plugins:
+  - serverless-esbuild

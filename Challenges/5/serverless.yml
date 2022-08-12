@@ -1,0 +1,103 @@
+service: workshop-snssqs
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  profile: serverless
+  region: eu-west-1
+  apiGateway:
+    apiKeys:
+      - order-function-key
+  environment:
+    ACCOUNT_ID: ${aws:accountId}
+  iam:
+    role:
+      statements:
+        - Effect: 'Allow'
+          Action:
+            - 'sns:Publish'
+          Resource:
+            - '*'
+
+functions:
+  OrderFunction:
+    handler: order-function/handler.handle
+    events:
+      - http:
+          path: /
+          method: post
+          private: true
+
+  EmailFunction:
+    handler: email-function/handler.handle
+    events:
+      - sns:
+          arn: !Ref OrderCreatedTopic
+          topicName: order-created-event
+
+  BillingFunction:
+    handler: billing-function/handler.handle
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - BillingQueue
+              - Arn
+plugins:
+  - serverless-esbuild
+
+resources:
+  Resources:
+
+    ## Order Function
+
+    OrderCreatedTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: order-created-event
+
+    ## Billing
+
+    BillingQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: billing-queue
+        RedrivePolicy:
+          deadLetterTargetArn:
+            "Fn::GetAtt":
+              - BillingDeadLetterQueue
+              - Arn
+          maxReceiveCount: 1
+
+    BillingDeadLetterQueue:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: "billing-dlq"
+        MessageRetentionPeriod: 1209600 # 14 days in seconds
+
+    BillingOrderCreatedSubscription:
+      Type: 'AWS::SNS::Subscription'
+      Properties:
+        TopicArn: !Ref OrderCreatedTopic
+        Endpoint: !GetAtt
+          - BillingQueue
+          - Arn
+        Protocol: sqs
+        RawMessageDelivery: true
+
+    BillingQueuePolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: "allow-sns-messages"
+              Effect: Allow
+              Principal: "*"
+              Resource: !GetAtt
+                - BillingQueue
+                - Arn
+              Action: "SQS:SendMessage"
+        Queues:
+          - Ref: BillingQueue

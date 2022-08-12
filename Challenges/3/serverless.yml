@@ -1,0 +1,51 @@
+service: workshop-snssqs
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  profile: serverless
+  region: eu-west-1
+  apiGateway:
+    apiKeys:
+      - order-function-key
+  environment:
+    ACCOUNT_ID: ${aws:accountId}
+  iam:
+    role:
+      statements:
+        - Effect: 'Allow'
+          Action:
+            - 'sns:Publish'
+          Resource:
+            - '*'
+
+functions:
+  OrderFunction:
+    handler: order-function/handler.handle
+    events:
+      - http:
+          path: /
+          method: post
+          private: true
+
+  EmailFunction:
+    handler: email-function/handler.handle
+    events:
+      - sns:
+          arn: !Ref OrderCreatedTopic
+          topicName: order-created-event
+
+
+plugins:
+  - serverless-esbuild
+
+resources:
+  Resources:
+
+    ## Order Function
+
+    OrderCreatedTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: order-created-event
